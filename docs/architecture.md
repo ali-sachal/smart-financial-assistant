@@ -1,21 +1,36 @@
 # Architecture
 
 ```text
-app/
-  api/
-    endpoints/         platform and product HTTP APIs
-    models/            optional product model-registration modules
-    seeds/             optional product billing-module definitions
-  core/                config, auth, errors, middleware, domain discovery
-  db/                  SQLAlchemy engine and declarative base
-  models/              platform users and billing models
-  repositories/        persistence operations
-  services/            billing, payments, health, and provider services
-  invoices/            generic invoice renderer
-  kafka/               event transport and local notification fallback
-  utils/               logging, email, storage, and document helpers
-  alembic/              platform migrations
-tests/                  platform boot and authentication tests
+Flutter + Cognito PKCE
+        |
+        | Cognito access token
+        v
+ALB -> FastAPI on ECS Fargate
+          |-- Cognito JWKS verification
+          |-- services/ business rules and forecast
+          |-- repositories/ DynamoDB and S3 access
+          `-- ai/ Gemini receipt and tool selection
+                   |
+                   `-- ai/agents -> allowlisted services only
 ```
 
-Platform code never imports a product domain by name. `ENABLED_DOMAINS` selects domain packages at startup and during Alembic metadata discovery.
+## Package boundaries
+
+- `app/api/endpoints`: request validation, authentication dependencies, service calls, and standardized responses only.
+- `app/schemas`: every Pydantic HTTP, AI, and tool schema.
+- `app/models`: plain DynamoDB entity dataclasses and enums.
+- `app/repositories`: all boto3 DynamoDB/S3 operations.
+- `app/services`: all finance rules, calculations, orchestration, and audit construction.
+- `ai`: Gemini provider boundary and structured receipt extraction.
+- `ai/agents`: tool declarations, validation, dispatch, grounding, and safety limits.
+- `infra`: AWS CDK deployment.
+
+## DynamoDB access patterns
+
+The base partition is `PK=USER#{cognito_sub}`. Entity IDs form the sort key. Transaction and bill timelines use overloaded `GSI1` keys. Conversations and audits use sort-key prefixes. Product repositories never scan the table.
+
+Receipt bytes are private S3 objects at `users/{sub}/receipts/{receipt_id}.{extension}`. DynamoDB stores only the key, digest, extraction, confidence state, and linked transaction ID.
+
+## Trust boundaries
+
+Only a validated Cognito access token creates identity context. Request bodies and model calls cannot supply a user ID. Gemini can select only declared tools; tool arguments pass through Pydantic validation and the registry injects the authenticated identity.

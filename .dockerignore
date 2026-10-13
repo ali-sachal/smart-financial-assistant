@@ -1,29 +1,18 @@
-# Virtual environment
+.git/
+.env
 .venv/
 venv/
-
-# Pytest cache
-.pytest_cache/
-
-# Python compiled files
 __pycache__/
-*.pyc
+*.py[cod]
 *.log
-
-# Environment variables file (CRITICAL: Contains secrets)
-.env
-
-# Version control
-.git/
-
-# Alembic temporary files (from previous images)
-alembic.txt
-
-# Editors/IDE files
+.pytest_cache/
+.coverage
+htmlcov/
+logs/
+infra/
+tests/
+build/
+dist/
+*.egg-info/
 .vscode/
 .idea/
-
-# Packaging/Build related files
-dist/
-build/
-*.egg-info/

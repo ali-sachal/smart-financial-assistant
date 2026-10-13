@@ -1,0 +1,8 @@
+{
+  "app": "python app.py",
+  "context": {
+    "callback_url": "smartfinance://auth/callback",
+    "logout_url": "smartfinance://auth/logout",
+    "cognito_domain_prefix": "smart-finance-demo"
+  }
+}

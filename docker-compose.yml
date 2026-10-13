@@ -1,44 +1,20 @@
 services:
   api:
     build: .
-    image: fastapi-platform:${IMAGE_TAG:-local}
+    image: smart-finance-assistant:${IMAGE_TAG:-local}
     environment:
-      POSTGRES_SERVER: postgres
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-app}
       ENVIRONMENT: ${ENVIRONMENT:-local}
-      AUTH_MODE: ${AUTH_MODE:-local}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      FEATURE_KAFKA: ${FEATURE_KAFKA:-false}
-      KAFKA_SERVER: ${KAFKA_SERVER:-redpanda:9092}
-      ENABLED_DOMAINS: ${ENABLED_DOMAINS:-example}
+      USE_IN_MEMORY_REPOSITORY: ${USE_IN_MEMORY_REPOSITORY:-true}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      FINANCE_TABLE_NAME: ${FINANCE_TABLE_NAME:-smart-finance}
+      RECEIPTS_BUCKET_NAME: ${RECEIPTS_BUCKET_NAME:-}
+      COGNITO_REGION: ${COGNITO_REGION:-us-east-1}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_APP_CLIENT_ID: ${COGNITO_APP_CLIENT_ID:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.5-flash}
+      LOG_JSON: ${LOG_JSON:-false}
     ports:
       - "${API_PORT:-8080}:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-app}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  redpanda:
-    image: redpandadata/redpanda:v24.3.6
-    profiles: ["events"]
-    command: ["redpanda", "start", "--overprovisioned", "--smp", "1", "--memory", "512M", "--reserve-memory", "0M", "--node-id", "0", "--kafka-addr", "0.0.0.0:9092", "--advertise-kafka-addr", "redpanda:9092"]
-
-volumes:
-  postgres_data:
+      - ./logs:/code/logs

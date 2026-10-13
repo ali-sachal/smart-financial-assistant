@@ -1,117 +1,153 @@
+import logging
 import time
-from typing import Optional
+from typing import Any
 
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import ExpiredSignatureError, InvalidTokenError
+from jwt import (
+    ExpiredSignatureError,
+    InvalidIssuerError,
+    InvalidTokenError,
+    PyJWKClient,
+    PyJWKClientConnectionError,
+    PyJWKClientError,
+)
 
 from app.core.config import settings
-from app.core.exceptions import AppException, Message, ResponseCode
+from app.core.exceptions import AppException, ErrorCode, Message, ResponseCode
+from app.schemas.auth import AuthenticatedUser
+from app.utils.logging import get_module_logger
 
-auth = HTTPBearer(auto_error=False)
-
-DEV_USER = {
-    "sub": "dev-user",
-    "aud": settings.EXPECTED_AUD,
-    "scopes": ["admin"],
-    "exp": 0,
-    "jti": "dev",
-}
+logger = get_module_logger("auth")
+bearer = HTTPBearer(auto_error=False)
 
 
-def create_local_token(user_id: str, extra: Optional[dict] = None, ttl: int = 3600) -> str:
-    now = int(time.time())
-    payload = {
-        "sub": str(user_id),
-        "iat": now,
-        "exp": now + ttl,
-        "aud": settings.EXPECTED_AUD,
-        "scopes": [],
-    }
-    if extra:
-        payload.update(extra)
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+class CognitoTokenVerifier:
+    def __init__(self) -> None:
+        self._jwks_client: PyJWKClient | None = None
+        self._created_at = 0.0
 
+    @property
+    def issuer(self) -> str:
+        return (
+            f"https://cognito-idp.{settings.COGNITO_REGION}.amazonaws.com/"
+            f"{settings.COGNITO_USER_POOL_ID}"
+        )
 
-def verify_jwt(creds: Optional[HTTPAuthorizationCredentials] = Depends(auth)) -> Optional[dict]:
-    if not settings.FEATURE_AUTH or (settings.AUTH_MODE or "").lower() == "none":
-        return dict(DEV_USER)
-
-    if creds is None:
-        return None
-
-    token = creds.credentials
-    mode = (settings.AUTH_MODE or "jwt_rs256").lower()
-
-    try:
-        if mode == "local":
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET,
-                algorithms=["HS256"],
-                audience=settings.EXPECTED_AUD,
-                options={"require": ["exp", "iat"], "verify_aud": bool(settings.EXPECTED_AUD)},
-                leeway=settings.CLOCK_SKEW_LEEWAY,
+    def _client(self) -> PyJWKClient:
+        now = time.monotonic()
+        expired = now - self._created_at >= settings.COGNITO_JWKS_TTL_SECONDS
+        if self._jwks_client is None or expired:
+            self._jwks_client = PyJWKClient(
+                f"{self.issuer}/.well-known/jwks.json",
+                cache_keys=True,
+                lifespan=settings.COGNITO_JWKS_TTL_SECONDS,
             )
-        else:
-            if not settings.PASSPORT_PUBLIC_KEY:
-                raise HTTPException(status_code=401, detail="Invalid token: signing key is not configured")
-            payload = jwt.decode(
+            self._created_at = now
+        return self._jwks_client
+
+    def verify(self, token: str) -> AuthenticatedUser:
+        if not settings.COGNITO_USER_POOL_ID or not settings.COGNITO_APP_CLIENT_ID:
+            logger.error("event=cognito_configuration_missing")
+            raise AppException(
+                ResponseCode.SERVICE_UNAVAILABLE,
+                Message.AUTH_JWKS_UNAVAILABLE,
+                error_code=ErrorCode.AUTH_JWKS_UNAVAILABLE,
+            )
+        try:
+            header = jwt.get_unverified_header(token)
+            if header.get("alg") != "RS256" or not header.get("kid"):
+                raise AppException(
+                    ResponseCode.UNAUTHORIZED,
+                    Message.AUTH_TOKEN_INVALID,
+                    error_code=ErrorCode.AUTH_TOKEN_INVALID,
+                )
+            signing_key = self._client().get_signing_key_from_jwt(token)
+            claims: dict[str, Any] = jwt.decode(
                 token,
-                settings.PASSPORT_PUBLIC_KEY,
+                signing_key.key,
                 algorithms=["RS256"],
-                audience=settings.EXPECTED_AUD,
-                options={"require": ["exp", "iat"]},
+                issuer=self.issuer,
+                options={"require": ["exp", "iat", "iss", "sub", "token_use"]},
                 leeway=settings.CLOCK_SKEW_LEEWAY,
             )
+            if claims.get("token_use") != "access":
+                raise AppException(
+                    ResponseCode.UNAUTHORIZED,
+                    Message.AUTH_TOKEN_TYPE_INVALID,
+                    error_code=ErrorCode.AUTH_TOKEN_TYPE_INVALID,
+                )
+            if claims.get("client_id") != settings.COGNITO_APP_CLIENT_ID:
+                raise AppException(
+                    ResponseCode.UNAUTHORIZED,
+                    Message.AUTH_CLIENT_INVALID,
+                    error_code=ErrorCode.AUTH_CLIENT_INVALID,
+                )
+            scopes = str(claims.get("scope") or "").split()
+            groups = list(claims.get("cognito:groups") or [])
+            return AuthenticatedUser(
+                user_id=str(claims["sub"]),
+                email=claims.get("email"),
+                username=claims.get("username") or claims.get("cognito:username"),
+                scopes=scopes,
+                groups=groups,
+            )
+        except AppException:
+            raise
+        except ExpiredSignatureError as exc:
+            raise AppException(
+                ResponseCode.UNAUTHORIZED,
+                Message.AUTH_TOKEN_EXPIRED,
+                error_code=ErrorCode.AUTH_TOKEN_EXPIRED,
+            ) from exc
+        except InvalidIssuerError as exc:
+            raise AppException(
+                ResponseCode.UNAUTHORIZED,
+                Message.AUTH_ISSUER_INVALID,
+                error_code=ErrorCode.AUTH_ISSUER_INVALID,
+            ) from exc
+        except (PyJWKClientConnectionError, OSError) as exc:
+            logger.exception("event=cognito_jwks_failure")
+            raise AppException(
+                ResponseCode.SERVICE_UNAVAILABLE,
+                Message.AUTH_JWKS_UNAVAILABLE,
+                error_code=ErrorCode.AUTH_JWKS_UNAVAILABLE,
+            ) from exc
+        except PyJWKClientError as exc:
+            raise AppException(
+                ResponseCode.UNAUTHORIZED,
+                Message.AUTH_TOKEN_INVALID,
+                error_code=ErrorCode.AUTH_TOKEN_INVALID,
+            ) from exc
+        except InvalidTokenError as exc:
+            raise AppException(
+                ResponseCode.UNAUTHORIZED,
+                Message.AUTH_TOKEN_INVALID,
+                error_code=ErrorCode.AUTH_TOKEN_INVALID,
+            ) from exc
 
-        exp = payload["exp"]
-        ttl = int(exp - time.time())
-        if ttl <= 0:
-            raise HTTPException(status_code=401, detail="Token expired")
 
-        payload["raw_token"] = token
-        return payload
-
-    except ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except InvalidTokenError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+token_verifier = CognitoTokenVerifier()
 
 
-verify_passport_jwt = verify_jwt
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+) -> AuthenticatedUser:
+    if credentials is None:
+        raise AppException(
+            ResponseCode.UNAUTHORIZED,
+            Message.AUTH_TOKEN_MISSING,
+            error_code=ErrorCode.AUTH_TOKEN_MISSING,
+        )
+    return token_verifier.verify(credentials.credentials)
 
 
-def get_optional_user(claims: Optional[dict] = Depends(verify_jwt)) -> Optional[dict]:
-    return claims
-
-
-def get_current_user(claims: Optional[dict] = Depends(verify_jwt)) -> dict:
-    if not claims or not claims.get("sub"):
-        raise AppException(ResponseCode.UNAUTHORIZED, Message.INVALID_TOKEN)
-    return claims
-
-
-def require_admin(claims: dict = Depends(get_current_user)) -> dict:
-    scopes = claims.get("scopes") or []
-    role = claims.get("role")
-    if "admin" in scopes or role == "admin":
-        return claims
-    if settings.ADMIN_OPEN and settings.ENVIRONMENT.lower() in ("local", "test", "dev"):
-        return claims
-    raise AppException(ResponseCode.FORBIDDEN, Message.UNAUTHORIZED_ACCESS)
-
-
-def get_user_data_from_claims(claims: dict) -> dict:
-    return {
-        "user_id": claims.get("sub"),
-        "aud": claims.get("aud"),
-        "scopes": claims.get("scopes", []),
-        "exp": claims.get("exp"),
-        "jti": claims.get("jti"),
-    }
-
-
-def get_jti_from_claims(claims: dict) -> str | None:
-    return claims.get("jti")
+def require_admin(user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
+    if "admin" not in user.groups:
+        raise AppException(
+            ResponseCode.FORBIDDEN,
+            Message.UNAUTHORIZED_ACCESS,
+            error_code=ErrorCode.AUTH_TOKEN_INVALID,
+        )
+    return user
