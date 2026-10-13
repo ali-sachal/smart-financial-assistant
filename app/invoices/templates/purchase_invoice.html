@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Purchase Invoice</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 13px;
+            color: #333;
+        }
+ 
+        .invoice-card {
+            max-width: 800px;
+            margin: auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.07);
+            overflow: hidden;
+            position: relative;
+            min-height: 1000px; /* A4 height approx */
+        }
+ 
+        .invoice-header {
+            height: 130px;
+            background-color: #323756;
+            padding: 20px 30px;
+            color: white;
+            overflow: hidden; 
+        }
+ 
+        .invoice-header img {
+            float: left;
+            width: 200px;
+        }
+ 
+        .invoice-info {
+            float: right;
+            text-align: left;
+            padding-top: 10px;
+        }
+ 
+        .invoice-body {
+            padding: 30px;
+            padding-bottom: 15px; /* Space for footer */
+            clear: both;
+        }
+ 
+        .section {
+            margin-bottom: 30px;
+        }
+ 
+        .section h3 {
+            color: #323756;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+ 
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+ 
+        th, td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+ 
+        th {
+            background-color: #f4f2fc;
+        }
+ 
+        .total-row td {
+            font-weight: bold;
+            background-color: #fafafa;
+        }
+ 
+        .badge-paid {
+            color: green;
+            font-weight: bold;
+        }
+ 
+        .badge-failed {
+            color: red;
+            font-weight: bold;
+        }
+ 
+        .footer {
+            background-color: #f4f4f4;
+            padding: 15px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            border-top: 1px solid #ddd;
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+    </style>
+    </head>
+<body>
+<div class="invoice-card">
+    <div class="invoice-header">
+        <div class="brand-name">{{ app_name }}</div>
+ 
+        <div class="invoice-info">
+            <h1>Invoice</h1>
+            <p>Date: {{ purchase_date }}</p>
+            <p>Invoice #: {{ invoice_number }}</p>
+        </div>
+    </div>
+
+    <div class="invoice-body">
+        <div class="section">
+            <table>
+                <tr>
+                    <td>
+                        <strong>Billed From</strong><br>
+                        {{ business_name }}<br>
+                        {% if business_identifier %}{{ business_identifier }}<br>{% endif %}
+                        {{ business_email }}<br>
+                        {% if business_address %}{{ business_address }}{% endif %}
+                    </td>
+                    <td>
+                        <strong>Billed To</strong><br>
+                        {{ first_name }} {{ last_name }}<br>
+                        {{ email }}<br>
+                        Payment Method: {{ payment_method }}
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="section">
+            <h3>Purchase Detail</h3>
+            <table>
+                <tbody>
+                    <tr>
+                        <td>Plan Title</td>
+                        <td>{{ plan_title }}</td>
+                    </tr>
+                    <tr>
+                        <td>Amount Charged</td>
+                        <td>${{ amount_formatted }}</td>
+                    </tr>
+                    <tr>
+                        <td>Payment Status</td>
+                        <td>{{ payment_status }}</td>
+                    </tr>
+                    <tr>
+                        <td>Charged At</td>
+                        <td>{{ charged_at }}</td>
+                    </tr>
+                    <tr>
+                        <td>Transaction ID</td>
+                        <td>{{ transaction_id }}</td>
+                    </tr>
+                    <tr>
+                        <td>Valid till</td>
+                        <td>{{ valid_till }}</td>
+                    </tr>
+                    <tr>
+                        <td> Credits</td>
+                        <td>{{ plan_credits }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+                
+        <div class="section">
+            <h3>Overall Payment Summary</h3>
+            <table>
+                <tbody>
+                    <tr class="total-row">
+                        <td>Total Price</td>
+                        <td>${{ total_amount_formatted }}</td>
+                    </tr>
+                    <tr>
+                        <td>Discount</td>
+                        <td>${{ discount_amount_formatted }}</td>
+                    </tr>
+                    <tr class="total-row">
+                        <td>Total Paid</td>
+                        <td>${{ total_paid_amount_formatted }}</td>
+                    </tr>
+                    <tr class="total-row">
+                        <td>Invoice Status</td>
+                        <td>
+                            {% if paid_in_full %}
+                                <span class="badge-paid">PAID</span>
+                            {% else %}
+                                <span style="color:orange;font-weight:bold">
+                                    PAYMENT IN PROGRESS
+                                </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        Thank you for your purchase from {{ app_name }}.
+    </div>
+</div>
+</body>
+</html>

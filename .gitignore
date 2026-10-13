@@ -1,0 +1,82 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+# Environment files
+.env
+*.key
+
+oauth-public.key
+secrets-to-remove.txt
+directory_structure.md
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE settings
+.vscode/
+.idea/
+
+# Local poetry environment (if not needed)
+poetry/
+.vercel
+node_modules/
+package-lock.json
+
+#unnecessary files
+postmancollection.json
+openapitools.json
+openapi-generator-config.yaml
+all_files.txt
+reset_migrations.py
+prompts.md
+vercel.json
+# Testing and Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build and Distribution
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Type Checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Rope project
+.ropeproject
+# Generated / prompt files
+prompt.md
+parsed_resume.json
+demo-resume.json
+app/tests/
+logs/
+
+
+#celerybeat-schedule
+celerybeat-schedule.bak
+celerybeat-schedule.dat
+celerybeat-schedule.dir
+
+# Local uploads
+uploads/
+
+
+migrations.mmd
