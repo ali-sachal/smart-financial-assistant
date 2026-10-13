@@ -49,4 +49,15 @@ After deployment, set the Gemini secret value and create the stable demo identit
 python -m scripts.create_demo_user --email demo@example.com
 ```
 
-See [AWS deployment](docs/aws-deployment.md), [architecture](docs/architecture.md), and [core algorithms](docs/core-algorithms.md).
+## Documentation
+
+| Audience | Document |
+|---|---|
+| Flutter engineer | [Frontend integration guide](docs/frontend-integration.md) |
+| Flutter and backend engineers | [API reference](docs/api-reference.md) |
+| DevOps/SRE | [Deployment and operations runbook](docs/devops-runbook.md) |
+| First deployment | [AWS quick deployment](docs/aws-deployment.md) |
+| All engineers | [Architecture](docs/architecture.md) |
+| Backend/AI reviewers | [Core algorithms](docs/core-algorithms.md) |
+
+The frontend handoff covers Cognito PKCE, secure token use, API-client behavior, cache invalidation, screen flows, and acceptance checks. The DevOps handoff covers configuration, CDK outputs, secret rotation, demo provisioning, logs, monitoring, release/rollback, recovery, teardown, and production hardening.
