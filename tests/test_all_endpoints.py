@@ -1,11 +1,15 @@
+import time
 from datetime import date, timedelta
+from types import SimpleNamespace
 
+import jwt
 from fastapi.testclient import TestClient
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from ai.agents.finance_agent import finance_agent
-from app.core.security import get_current_user
+from app.core.config import settings
+from app.core.security import token_verifier
 from app.main import app
-from app.schemas.auth import AuthenticatedUser
 from app.schemas.finance import ReceiptExtraction
 from app.services.receipt_service import receipt_service
 
@@ -30,14 +34,46 @@ class UnavailableAgentGateway:
     available = False
 
 
+class FakeJwksClient:
+    def __init__(self, public_key):
+        self.public_key = public_key
+
+    def get_signing_key_from_jwt(self, _: str):
+        return SimpleNamespace(key=self.public_key)
+
+
+def access_token(private_key, user_id: str) -> str:
+    now = int(time.time())
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "iss": (
+                f"https://cognito-idp.{settings.COGNITO_REGION}.amazonaws.com/"
+                f"{settings.COGNITO_USER_POOL_ID}"
+            ),
+            "client_id": settings.COGNITO_APP_CLIENT_ID,
+            "token_use": "access",
+            "iat": now,
+            "exp": now + 300,
+            "scope": "openid profile",
+        },
+        private_key,
+        algorithm="RS256",
+        headers={"kid": "endpoint-test-key"},
+    )
+
+
 def test_every_documented_api_operation(monkeypatch):
-    user = AuthenticatedUser(user_id="all-endpoints-user", email="endpoints@example.com")
-    app.dependency_overrides[get_current_user] = lambda: user
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(token_verifier, "_client", lambda: FakeJwksClient(private_key.public_key()))
     monkeypatch.setattr(receipt_service, "gateway", ReviewReceiptGateway())
     monkeypatch.setattr(finance_agent, "gateway", UnavailableAgentGateway())
+    primary_headers = {"Authorization": f"Bearer {access_token(private_key, 'all-endpoints-user')}"}
+    other_headers = {"Authorization": f"Bearer {access_token(private_key, 'other-endpoints-user')}"}
     covered: set[tuple[str, str]] = set()
 
     def call(client: TestClient, method: str, path: str, **kwargs):
+        kwargs.setdefault("headers", primary_headers)
         response = client.request(method, path, **kwargs)
         covered.add((method.upper(), path.split("?", maxsplit=1)[0]))
         assert response.status_code < 400, (
@@ -52,6 +88,10 @@ def test_every_documented_api_operation(monkeypatch):
 
     try:
         with TestClient(app) as client:
+            missing_token = client.get("/api/accounts")
+            assert missing_token.status_code == 401
+            assert missing_token.json()["code"] == "AUTH_TOKEN_MISSING"
+
             call(client, "GET", "/api/health/check")
             call(client, "GET", "/api/auth/me")
             call(client, "POST", "/api/demo/seed")
@@ -86,6 +126,20 @@ def test_every_documented_api_operation(monkeypatch):
                     "notes": "Endpoint coverage",
                 },
             ).json()["result"]
+
+            isolated_list = client.get("/api/transactions?limit=200", headers=other_headers)
+            assert isolated_list.status_code == 200
+            assert transaction["transaction_id"] not in {
+                item["transaction_id"] for item in isolated_list.json()["result"]["items"]
+            }
+            cross_user_update = client.patch(
+                f"/api/transactions/{transaction['transaction_id']}",
+                headers=other_headers,
+                json={"category": "unauthorized-change"},
+            )
+            assert cross_user_update.status_code == 404
+            assert cross_user_update.json()["code"] == "FIN_TRANSACTION_NOT_FOUND"
+
             call(
                 client,
                 "PATCH",
