@@ -1,0 +1,20 @@
+services:
+  api:
+    build: .
+    image: smart-finance-assistant:${IMAGE_TAG:-local}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      USE_IN_MEMORY_REPOSITORY: ${USE_IN_MEMORY_REPOSITORY:-true}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      FINANCE_TABLE_NAME: ${FINANCE_TABLE_NAME:-smart-finance}
+      RECEIPTS_BUCKET_NAME: ${RECEIPTS_BUCKET_NAME:-}
+      COGNITO_REGION: ${COGNITO_REGION:-us-east-1}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_APP_CLIENT_ID: ${COGNITO_APP_CLIENT_ID:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.5-flash}
+      LOG_JSON: ${LOG_JSON:-false}
+    ports:
+      - "${API_PORT:-8080}:8000"
+    volumes:
+      - ./logs:/code/logs
